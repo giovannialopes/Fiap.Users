@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fiap-cloud-users
+  labels:
+    name: fiap-cloud-users
+    environment: production
+

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Users.Domain.Queue;
 using Users.Domain.Services.Class;
 using Users.Domain.Services.Interface;
 
@@ -12,8 +13,12 @@ public static class DomainDependency
             .AddScoped<ILoggerServices, LoggerServices>()
             .AddScoped<IUserServices, UserServices>()
             .AddScoped<IJwtServices, JwtServices>()
-            .AddScoped<ICarteiraServices, CarteiraServices>();
-
+            .AddScoped<ICarteiraServices, CarteiraServices>()
+            .AddScoped<IWalletBusPublisher, WalletBusPublisher>()
+            // Observabilidade - SOLID (DIP)
+            .AddSingleton<IMetricsService, MetricsService>()
+            .AddSingleton<IPrometheusFormatter, PrometheusFormatter>()
+            .AddSingleton<IRequestLogger, RequestLogger>();
     }
 }
 

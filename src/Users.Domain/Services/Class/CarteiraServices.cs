@@ -67,32 +67,65 @@ public class CarteiraServices(ICarteiraRepository carteiraRepository, ILoggerSer
     }
 
     public async Task<Result<CarteiraDto.CarteiraDtoResponse>> RemoverSaldos(CarteiraDto.CarteiraDtoRequest request) {
+        
+        // Validações de entrada
+        if (request == null)
+        {
+            await logger.LogError("Request de remoção de saldo é nulo");
+            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("Request inválido.", "400");
+        }
+
+        if (request.PerfilId == Guid.Empty)
+        {
+            await logger.LogError("PerfilId inválido na remoção de saldo");
+            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("PerfilId inválido.", "400");
+        }
+
+        if (request.Saldo <= 0)
+        {
+            await logger.LogError($"Valor de saldo inválido: {request.Saldo}");
+            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("Valor a remover deve ser maior que zero.", "400");
+        }
+
+        // Buscar carteira
         var carteira = await carteiraRepository.ObtemSaldoPorId(request.PerfilId);
         if (carteira == null) {
-            await logger.LogError($"Carteira não encontrada.");
-            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("Carteira não encontrado.", "500");
+            await logger.LogError($"Carteira não encontrada para o perfil {request.PerfilId}");
+            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("Carteira não encontrada.", "404");
         }
 
+        // Validar saldo disponível
         if (carteira.Saldo == 0) {
-            await logger.LogError($"Saldo já removido.");
-            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("Saldo já removido.", "500");
+            await logger.LogWarning($"Tentativa de remover saldo de carteira com saldo zero: {request.PerfilId}");
+            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("Saldo já está zerado.", "400");
         }
 
+        if (carteira.Saldo < request.Saldo) {
+            await logger.LogWarning(
+                $"Tentativa de remover saldo maior que o disponível. Disponível: {carteira.Saldo}, Solicitado: {request.Saldo}");
+            return Result.Failure<CarteiraDto.CarteiraDtoResponse>(
+                $"Saldo insuficiente. Você possui {carteira.Saldo:C} e está tentando remover {request.Saldo:C}.", "400");
+        }
 
+        // Calcular novo saldo
+        var novoSaldo = carteira.Saldo - request.Saldo;
+        
+        // Garantir que não fique negativo (proteção adicional)
+        if (novoSaldo < 0) {
+            novoSaldo = 0;
+            await logger.LogWarning($"Saldo calculado ficaria negativo, ajustando para zero: {request.PerfilId}");
+        }
 
         var novaCarteira = CarteiraEnt.Atualizar(
             carteira.Id,
             carteira.PerfilId,
-            carteira.Saldo - request.Saldo);
-
-        if (novaCarteira.Saldo.ToString().Contains("-")) {
-            novaCarteira.Saldo = 0;
-
-            await logger.LogError($"Saldo negativo.");
-            return Result.Failure<CarteiraDto.CarteiraDtoResponse>("Você não possui saldo suficiente.", "500");
-        }
+            novoSaldo);
 
         carteiraRepository.AlteraSaldo(novaCarteira);
+        await carteiraRepository.Commit();
+
+        await logger.LogInformation(
+            $"Saldo removido com sucesso. Perfil: {request.PerfilId}, Valor removido: {request.Saldo:C}, Novo saldo: {novoSaldo:C}");
 
         return Result.Success(new CarteiraDto.CarteiraDtoResponse {
             Saldo = novaCarteira.Saldo
